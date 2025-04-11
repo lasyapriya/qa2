@@ -7,13 +7,15 @@ import os
 # Streamlit page configuration
 st.set_page_config(page_title="Quick Veda | Doc Analyzer", page_icon="📄", layout="wide")
 
-# Cache RoBERTa pipeline
+# Cache TinyLLaMA pipeline
 @st.cache_resource
 def load_qa_pipeline():
     return pipeline(
-        "question-answering",
-        model="deepset/roberta-base-squad2",
-        tokenizer="deepset/roberta-base-squad2"
+        "text-generation",
+        model="TinyLLaMA/TinyLLaMA-1.1B",
+        tokenizer="TinyLLaMA/TinyLLaMA-1.1B",
+        max_length=100,
+        temperature=0.7
     )
 
 # Initialize session state
@@ -22,7 +24,7 @@ if "pdf_text" not in st.session_state:
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-# HTML and CSS (unchanged)
+# HTML and CSS
 html_content = """
 <!DOCTYPE html>
 <html lang="en">
@@ -144,7 +146,7 @@ if submit_button and uploaded_file and question:
             text = ""
             for page in reader.pages:
                 text += page.extract_text() or ""
-            # Limit to 300 words for better context
+            # Limit to 1500 words
             st.session_state.pdf_text = " ".join(text.split()[:1500])
 
             # Clean up
@@ -155,12 +157,13 @@ if submit_button and uploaded_file and question:
 
     with st.spinner("Generating answer..."):
         try:
-            # Run RoBERTa pipeline
+            # Run TinyLLaMA pipeline
             qa_pipeline = load_qa_pipeline()
-            result = qa_pipeline(question=question, context=st.session_state.pdf_text)
-            answer = result["answer"]
+            prompt = f"Based on this context: {st.session_state.pdf_text}\n\nQ: {question}\nA:"
+            result = qa_pipeline(prompt, max_new_tokens=100)[0]["generated_text"].replace(prompt, "").strip()
+            answer = result.split("A:")[-1].strip()
 
-            # Ensure concise output (2–4 lines, 20–40 words)
+            # Ensure concise output (up to 100 words)
             if len(answer.split()) > 100:
                 answer = " ".join(answer.split()[:100]) + "..."
 
@@ -174,7 +177,7 @@ if submit_button and uploaded_file and question:
 </div>
 """, unsafe_allow_html=True)
 
-            # Store in chat history
+            # Store in chat_history
             st.session_state.chat_history.append({"question": question, "answer": answer})
 
         except Exception as e:
@@ -208,11 +211,11 @@ with st.sidebar:
 ### Tips for Better Results
 - Upload a clear PDF document.
 - Ask specific questions (e.g., "What is the main cause of climate change?").
-- Expect 2–4 line answers in under 20 seconds.
+- Expect answers in under 20 seconds.
     """)
     st.markdown("""
 ### About Quick Veda
-This app uses RoBERTa to quickly analyze PDFs and provide concise, relevant answers. No API keys needed.
+This app uses TinyLLaMA to analyze PDFs and provide concise, relevant answers. No API keys needed.
     """)
 
 # Bootstrap JS
