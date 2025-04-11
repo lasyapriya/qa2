@@ -7,16 +7,20 @@ import os
 # Streamlit page configuration
 st.set_page_config(page_title="Quick Veda | Doc Analyzer", page_icon="📄", layout="wide")
 
-# Cache TinyLLaMA pipeline
+# Cache TinyLLaMA pipeline with error handling
 @st.cache_resource
 def load_qa_pipeline():
-    return pipeline(
-        "text-generation",
-        model="TinyLLaMA/TinyLLaMA-1.1B",
-        tokenizer="TinyLLaMA/TinyLLaMA-1.1B",
-        max_length=100,
-        temperature=0.7
-    )
+    try:
+        return pipeline(
+            "text-generation",
+            model="unsloth/TinyLLaMA-1.1B",
+            tokenizer="unsloth/TinyLLaMA-1.1B",
+            max_length=100,
+            temperature=0.7
+        )
+    except Exception as e:
+        st.error(f"Failed to load TinyLLaMA model: {str(e)}. Please ensure an internet connection and try again, or use a different model.")
+        st.stop()
 
 # Initialize session state
 if "pdf_text" not in st.session_state:
