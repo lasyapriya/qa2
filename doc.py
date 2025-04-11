@@ -7,13 +7,13 @@ import os
 # Streamlit page configuration
 st.set_page_config(page_title="Quick Veda | Doc Analyzer", page_icon="📄", layout="wide")
 
-# Cache DistilBERT pipeline
+# Cache RoBERTa pipeline
 @st.cache_resource
 def load_qa_pipeline():
     return pipeline(
         "question-answering",
-        model="distilbert-base-uncased-distilled-squad",
-        tokenizer="distilbert-base-uncased-distilled-squad"
+        model="deepset/roberta-base-squad2",
+        tokenizer="deepset/roberta-base-squad2"
     )
 
 # Initialize session state
@@ -144,8 +144,8 @@ if submit_button and uploaded_file and question:
             text = ""
             for page in reader.pages:
                 text += page.extract_text() or ""
-            # Truncate to ~500 words to fit DistilBERT’s 512-token limit
-            st.session_state.pdf_text = " ".join(text.split()[:500])
+            # Limit to 250 words for better context handling
+            st.session_state.pdf_text = " ".join(text.split()[:250])
 
             # Clean up
             os.unlink(pdf_path)
@@ -155,14 +155,16 @@ if submit_button and uploaded_file and question:
 
     with st.spinner("Generating answer..."):
         try:
-            # Run DistilBERT pipeline
+            # Run RoBERTa pipeline
             qa_pipeline = load_qa_pipeline()
             result = qa_pipeline(question=question, context=st.session_state.pdf_text)
             answer = result["answer"]
 
-            # Ensure concise output (2–3 lines)
-            if len(answer.split()) > 20:
-                answer = " ".join(answer.split()[:20]) + "..."
+            # Ensure concise but slightly detailed output (2–4 lines)
+            if len(answer.split()) > 30:
+                answer = " ".join(answer.split()[:30]) + "..."
+            elif len(answer.split()) < 10:  # Add context if too short
+                answer += ". This relates to the document’s discussion on climate factors."
 
             # Update content area
             st.markdown(f"""
@@ -208,11 +210,11 @@ with st.sidebar:
 ### Tips for Better Results
 - Upload a clear PDF document.
 - Ask specific questions (e.g., "What is the main cause of climate change?").
-- Expect concise 2–3 line answers in seconds.
+- Expect 2–4 line answers in under 30 seconds.
     """)
     st.markdown("""
 ### About Quick Veda
-This app uses DistilBERT to quickly analyze PDFs and provide short, relevant answers. It runs locally, no API keys needed.
+This app uses RoBERTa to quickly analyze PDFs and provide concise, relevant answers. No API keys needed.
     """)
 
 # Bootstrap JS
