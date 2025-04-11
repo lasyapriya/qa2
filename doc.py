@@ -4,9 +4,7 @@ from langchain.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.vectorstores import Chroma
-from langchain.llms import LlamaCpp
-from langchain.chains import LLMChain
-from langchain.prompts import PromptTemplate
+from transformers import pipeline
 import PyPDF2
 import tempfile
 import os
@@ -17,29 +15,21 @@ st.set_page_config(page_title="Quick Veda | Doc Analyzer", page_icon="📄", lay
 # Device setup
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Cache model and embeddings to avoid reloading
-@st.cache_resource
-def load_model():
-    model_path = "./phi-3-mini-4k-instruct-q4.gguf"
-    # Download model if not present (replace with actual URL)
-    if not os.path.exists(model_path):
-        st.error("Model file not found. Please place 'phi-3-mini-4k-instruct-q4.gguf' in the project folder.")
-        st.stop()
-    return LlamaCpp(
-        model_path=model_path,
-        temperature=0.5,
-        max_tokens=500,
-        top_p=0.9,
-        n_ctx=2048,
-        verbose=False,
-        streaming=False
-    )
-
+# Cache embeddings and QA pipeline
 @st.cache_resource
 def load_embeddings():
     return HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-MiniLM-L6-v2",
         model_kwargs={"device": device}
+    )
+
+@st.cache_resource
+def load_qa_pipeline():
+    return pipeline(
+        "question-answering",
+        model="distilbert-base-uncased-distilled-squad",
+        tokenizer="distilbert-base-uncased-distilled-squad",
+        device=0 if torch.cuda.is_available() else -1
     )
 
 # Initialize session state
@@ -64,7 +54,7 @@ html_content = """
     }
     html {
       -ms-overflow-style: none;
-      scrollbar-width: none;
+      scrollbar-width: none0;
     }
     html::-webkit-scrollbar {
       display: none;
@@ -140,7 +130,7 @@ html_content = """
       transform: rotate(-44deg);
     }
     .about-container {
-      background-image: url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e'); /* Fallback image */
+      background-image: url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e');
       background-size: cover;
       background-position: center;
       height: 50vh;
@@ -280,28 +270,21 @@ if submit_button and uploaded_file and question:
             relevant_docs = retriever.invoke(question)
             context = " ".join([doc.page_content for doc in relevant_docs])
 
-            # Load model and create chain
-            llm = load_model()
-            prompt_template = """
-You are an expert assistant tasked with answering questions based on a document. Use the following context to provide a detailed, accurate, and comprehensive answer in multiple sentences. If the context doesn't fully answer the question, indicate what is unclear and provide the best possible response based on the available information. Do not make up facts.
+            # Run QA pipeline
+            qa_pipeline = load_qa_pipeline()
+            result = qa_pipeline(question=question, context=context)
 
-**Context**: {context}
-
-**Question**: {question}
-
-**Answer**:
-"""
-            prompt = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
-            chain = LLMChain(llm=llm, prompt=prompt)
-
-            # Generate answer
-            answer = chain.invoke({"context": context, "question": question})["text"]
+            # Enhance answer
+            answer = result["answer"]
+            confidence = result["score"]
+            if len(answer.split()) < 10:  # If answer is too short
+                answer = f"The document suggests that {answer}. Based on the context, this indicates a focus on the relevant information provided. For more details, please specify additional aspects of the topic."
 
             # Update content area
             st.markdown(f"""
 <div id="contentArea" class="mt-4 p-4 bg-light rounded shadow">
   <div class="alert alert-info" role="alert">
-    <h5 class="alert-heading">Answer:</h5>
+    <h5 class="alert-heading">Answer (Confidence: {confidence:.2%}):</h5>
     <p>{answer}</p>
   </div>
 </div>
@@ -346,7 +329,7 @@ with st.sidebar:
     """)
     st.markdown("""
 ### About Quick Veda
-This app uses advanced AI to analyze PDFs and answer your questions. Powered by a local language model, it ensures privacy and works without API keys.
+This app uses AI to analyze PDFs and answer your questions. Powered by a local model, it ensures privacy and works without API keys.
     """)
 
 # Bootstrap JS
