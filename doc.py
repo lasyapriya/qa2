@@ -145,7 +145,7 @@ if submit_button and uploaded_file and question:
             for page in reader.pages:
                 text += page.extract_text() or ""
             # Limit to 300 words for better context
-            st.session_state.pdf_text = " ".join(text.split()[:800])
+            st.session_state.pdf_text = " ".join(text.split()[:1500])
 
             # Clean up
             os.unlink(pdf_path)
@@ -161,8 +161,8 @@ if submit_button and uploaded_file and question:
             answer = result["answer"]
 
             # Ensure concise output (2–4 lines, 20–40 words)
-            if len(answer.split()) > 80:
-                answer = " ".join(answer.split()[:40]) + "..."
+            if len(answer.split()) > 100:
+                answer = " ".join(answer.split()[:100]) + "..."
 
             # Update content area
             st.markdown(f"""
