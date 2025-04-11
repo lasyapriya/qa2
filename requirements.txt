@@ -4,6 +4,5 @@ langchain==0.2.16
 langchain-community==0.2.16
 pypdf==5.0.1
 sentence-transformers==3.1.1
-chromadb==0.5.11
+faiss-cpu==1.8.0
 transformers==4.44.2
-pypdf2==3.0.1
