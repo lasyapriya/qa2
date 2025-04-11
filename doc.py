@@ -251,7 +251,7 @@ if submit_button and uploaded_file and question:
         try:
             loader = PyPDFLoader(pdf_path)
             data = loader.load()
-            text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
             chunks = text_splitter.split_documents(data)
 
             # Create vector store
@@ -267,26 +267,28 @@ if submit_button and uploaded_file and question:
     with st.spinner("Generating answer..."):
         try:
             # Retrieve relevant chunks
-            retriever = st.session_state.vector_store.as_retriever(search_kwargs={"k": 3})
+            retriever = st.session_state.vector_store.as_retriever(search_kwargs={"k": 5})
             relevant_docs = retriever.invoke(question)
             context = " ".join([doc.page_content for doc in relevant_docs])
+            # Truncate context to fit Flan-T5's 512 token limit (approx 400 words)
+            context = " ".join(context.split()[:400])
 
-            # Run T5 pipeline
+            # Run T5 pipeline with refined prompt
             t5_pipeline = load_t5_pipeline()
             prompt = f"""
-You are an expert assistant tasked with answering questions based on a document. Provide a detailed, accurate, and comprehensive answer in 5–10 sentences. Use the following context to inform your response, explaining key points clearly. If the context is insufficient, note the limitation and provide the best possible answer based on available information. Do not invent facts.
+You are an expert assistant tasked with answering questions based on a document. Provide a detailed, accurate, and comprehensive answer in 5–10 sentences, synthesizing the provided context. Explain key points clearly, elaborate on their significance, and connect them to the question. If the context lacks sufficient detail to fully answer, state this explicitly and provide the best possible response based on available information. Do not invent facts or repeat the question verbatim.
 
 **Context**: {context}
 
 **Question**: {question}
 
-**Answer**:
+**Detailed Answer**:
 """
             result = t5_pipeline(prompt)[0]["generated_text"]
 
-            # Ensure answer is detailed
-            if len(result.split()) < 30:  # If too short
-                result += " The document provides limited details on this topic, but the available context suggests a focus on the mentioned aspects. For a more comprehensive response, additional information from the document or a more specific question may help clarify the subject matter."
+            # Ensure minimum detail
+            if len(result.split()) < 50:  # Approx 5 sentences
+                result += " While the retrieved context provides some insight, it may not cover all aspects of the question. The document likely contains additional relevant details in other sections. A more specific or rephrased question could yield a fuller response based on the complete text."
 
             # Update content area
             st.markdown(f"""
@@ -331,13 +333,13 @@ with st.sidebar:
     st.markdown("""
 ### Tips for Better Results
 - Upload a clear PDF document.
-- Ask specific questions (e.g., "What is the main topic?" instead of "Tell me about it").
-- Use questions starting with "Explain," "Describe," or "Summarize" for detailed answers.
+- Ask specific questions (e.g., "What is the main cause of climate change?").
+- Use "Explain," "Describe," or "Summarize" for detailed answers.
 - Processing may take a moment for large files.
     """)
     st.markdown("""
 ### About Quick Veda
-This app uses Flan-T5 to analyze PDFs and provide detailed answers to your questions. It runs locally, ensuring privacy without API keys.
+This app uses Flan-T5 to analyze PDFs and provide detailed answers. It runs locally, ensuring privacy without API keys.
     """)
 
 # Bootstrap JS
