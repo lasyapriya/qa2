@@ -3,9 +3,8 @@ import torch
 from langchain.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.vectorstores import Chroma
+from langchain.vectorstores import FAISS
 from transformers import pipeline
-import PyPDF2
 import tempfile
 import os
 
@@ -15,7 +14,7 @@ st.set_page_config(page_title="Quick Veda | Doc Analyzer", page_icon="📄", lay
 # Device setup
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Cache embeddings and QA pipeline
+# Cache embeddings and T5 pipeline
 @st.cache_resource
 def load_embeddings():
     return HuggingFaceEmbeddings(
@@ -24,12 +23,14 @@ def load_embeddings():
     )
 
 @st.cache_resource
-def load_qa_pipeline():
+def load_t5_pipeline():
     return pipeline(
-        "question-answering",
-        model="distilbert-base-uncased-distilled-squad",
-        tokenizer="distilbert-base-uncased-distilled-squad",
-        device=0 if torch.cuda.is_available() else -1
+        "text2text-generation",
+        model="google/flan-t5-base",
+        tokenizer="google/flan-t5-base",
+        device=0 if torch.cuda.is_available() else -1,
+        max_length=500,
+        temperature=0.7
     )
 
 # Initialize session state
@@ -54,7 +55,7 @@ html_content = """
     }
     html {
       -ms-overflow-style: none;
-      scrollbar-width: none0;
+      scrollbar-width: none;
     }
     html::-webkit-scrollbar {
       display: none;
@@ -255,7 +256,7 @@ if submit_button and uploaded_file and question:
 
             # Create vector store
             embeddings = load_embeddings()
-            st.session_state.vector_store = Chroma.from_documents(chunks, embeddings)
+            st.session_state.vector_store = FAISS.from_documents(chunks, embeddings)
 
             # Clean up
             os.unlink(pdf_path)
@@ -270,28 +271,35 @@ if submit_button and uploaded_file and question:
             relevant_docs = retriever.invoke(question)
             context = " ".join([doc.page_content for doc in relevant_docs])
 
-            # Run QA pipeline
-            qa_pipeline = load_qa_pipeline()
-            result = qa_pipeline(question=question, context=context)
+            # Run T5 pipeline
+            t5_pipeline = load_t5_pipeline()
+            prompt = f"""
+You are an expert assistant tasked with answering questions based on a document. Provide a detailed, accurate, and comprehensive answer in 5–10 sentences. Use the following context to inform your response, explaining key points clearly. If the context is insufficient, note the limitation and provide the best possible answer based on available information. Do not invent facts.
 
-            # Enhance answer
-            answer = result["answer"]
-            confidence = result["score"]
-            if len(answer.split()) < 10:  # If answer is too short
-                answer = f"The document suggests that {answer}. Based on the context, this indicates a focus on the relevant information provided. For more details, please specify additional aspects of the topic."
+**Context**: {context}
+
+**Question**: {question}
+
+**Answer**:
+"""
+            result = t5_pipeline(prompt)[0]["generated_text"]
+
+            # Ensure answer is detailed
+            if len(result.split()) < 30:  # If too short
+                result += " The document provides limited details on this topic, but the available context suggests a focus on the mentioned aspects. For a more comprehensive response, additional information from the document or a more specific question may help clarify the subject matter."
 
             # Update content area
             st.markdown(f"""
 <div id="contentArea" class="mt-4 p-4 bg-light rounded shadow">
   <div class="alert alert-info" role="alert">
-    <h5 class="alert-heading">Answer (Confidence: {confidence:.2%}):</h5>
-    <p>{answer}</p>
+    <h5 class="alert-heading">Answer:</h5>
+    <p>{result}</p>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
             # Store in chat history
-            st.session_state.chat_history.append({"question": question, "answer": answer})
+            st.session_state.chat_history.append({"question": question, "answer": result})
 
         except Exception as e:
             st.markdown(f'<div id="contentArea" class="mt-4 p-4 bg-light rounded shadow"><p class="text-danger">Error generating answer: {str(e)}</p></div>', unsafe_allow_html=True)
@@ -324,12 +332,12 @@ with st.sidebar:
 ### Tips for Better Results
 - Upload a clear PDF document.
 - Ask specific questions (e.g., "What is the main topic?" instead of "Tell me about it").
-- Ensure the document contains relevant information.
+- Use questions starting with "Explain," "Describe," or "Summarize" for detailed answers.
 - Processing may take a moment for large files.
     """)
     st.markdown("""
 ### About Quick Veda
-This app uses AI to analyze PDFs and answer your questions. Powered by a local model, it ensures privacy and works without API keys.
+This app uses Flan-T5 to analyze PDFs and provide detailed answers to your questions. It runs locally, ensuring privacy without API keys.
     """)
 
 # Bootstrap JS
