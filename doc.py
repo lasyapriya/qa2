@@ -7,19 +7,17 @@ import os
 # Streamlit page configuration
 st.set_page_config(page_title="Quick Veda | Doc Analyzer", page_icon="📄", layout="wide")
 
-# Cache TinyLLaMA pipeline with error handling
+# Cache DistilBERT pipeline with error handling
 @st.cache_resource
 def load_qa_pipeline():
     try:
         return pipeline(
-            "text-generation",
-            model="unsloth/TinyLLaMA-1.1B",
-            tokenizer="unsloth/TinyLLaMA-1.1B",
-            max_length=100,
-            temperature=0.7
+            "question-answering",
+            model="distilbert-base-cased-distilled-squad",
+            tokenizer="distilbert-base-cased-distilled-squad"
         )
     except Exception as e:
-        st.error(f"Failed to load TinyLLaMA model: {str(e)}. Please ensure an internet connection and try again, or use a different model.")
+        st.error(f"Failed to load DistilBERT model: {str(e)}. Please ensure an internet connection and try again.")
         st.stop()
 
 # Initialize session state
@@ -161,11 +159,10 @@ if submit_button and uploaded_file and question:
 
     with st.spinner("Generating answer..."):
         try:
-            # Run TinyLLaMA pipeline
+            # Run DistilBERT pipeline
             qa_pipeline = load_qa_pipeline()
-            prompt = f"Based on this context: {st.session_state.pdf_text}\n\nQ: {question}\nA:"
-            result = qa_pipeline(prompt, max_new_tokens=100)[0]["generated_text"].replace(prompt, "").strip()
-            answer = result.split("A:")[-1].strip()
+            result = qa_pipeline(question=question, context=st.session_state.pdf_text)
+            answer = result["answer"]
 
             # Ensure concise output (up to 100 words)
             if len(answer.split()) > 100:
@@ -219,7 +216,7 @@ with st.sidebar:
     """)
     st.markdown("""
 ### About Quick Veda
-This app uses TinyLLaMA to analyze PDFs and provide concise, relevant answers. No API keys needed.
+This app uses DistilBERT to analyze PDFs and provide concise, relevant answers. No API keys needed.
     """)
 
 # Bootstrap JS
