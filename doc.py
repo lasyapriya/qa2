@@ -1,5 +1,4 @@
 import streamlit as st
-import torch
 from langchain.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings import HuggingFaceEmbeddings
@@ -11,26 +10,17 @@ import os
 # Streamlit page configuration
 st.set_page_config(page_title="Quick Veda | Doc Analyzer", page_icon="📄", layout="wide")
 
-# Device setup
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# Cache embeddings and T5 pipeline with explicit hash
-@st.cache_resource(hash_funcs={torch.nn.Module: id})
+# Cache embeddings and DistilBERT pipeline
+@st.cache_resource
 def load_embeddings():
-    return HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2",
-        model_kwargs={"device": device}
-    )
+    return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
-@st.cache_resource(hash_funcs={torch.nn.Module: id})
-def load_t5_pipeline():
+@st.cache_resource
+def load_qa_pipeline():
     return pipeline(
-        "text2text-generation",
-        model="google/flan-t5-base",
-        tokenizer="google/flan-t5-base",
-        device=0 if torch.cuda.is_available() else -1,
-        max_length=300,  # Reduced for speed
-        temperature=0.7
+        "question-answering",
+        model="distilbert-base-uncased-distilled-squad",
+        tokenizer="distilbert-base-uncased-distilled-squad"
     )
 
 # Initialize session state
@@ -139,7 +129,7 @@ st.markdown("""
 
 # Content area
 st.markdown("""
-<div id="contentArea" class="mt-4 p-4 bg-light rounded shadow" style="min-height: 300px;">
+<div id="contentArea" class="mt-4 p-4 bg-light rounded shadow" style="min-height: 200px;">
   <div class="text-center text-muted" id="placeholderText">
     <i class="fas fa-file-lines fa-2x mb-2"></i>
     <p>No document analyzed yet.</p>
@@ -159,7 +149,7 @@ if submit_button and uploaded_file and question:
         try:
             loader = PyPDFLoader(pdf_path)
             data = loader.load()
-            text_splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=30)
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=20)
             chunks = text_splitter.split_documents(data)
 
             # Create vector store
@@ -172,44 +162,36 @@ if submit_button and uploaded_file and question:
             st.markdown(f'<div id="contentArea" class="mt-4 p-4 bg-light rounded shadow"><p class="text-danger">Failed to process PDF: {str(e)}</p></div>', unsafe_allow_html=True)
             st.stop()
 
-    with st.spinner("Generating answer (this may take a moment)..."):
+    with st.spinner("Generating answer..."):
         try:
             # Retrieve relevant chunks
-            retriever = st.session_state.vector_store.as_retriever(search_kwargs={"k": 3})
+            retriever = st.session_state.vector_store.as_retriever(search_kwargs={"k": 2})
             relevant_docs = retriever.invoke(question)
             context = " ".join([doc.page_content for doc in relevant_docs])
-            # Truncate context to ~200 words for speed (within 512 tokens)
-            context = " ".join(context.split()[:200])
+            # Limit context to ~150 words for speed
+            context = " ".join(context.split()[:150])
 
-            # Run T5 pipeline with refined prompt
-            t5_pipeline = load_t5_pipeline()
-            prompt = f"""
-You are an expert assistant answering questions based on a document. Provide a detailed, accurate answer in 5–10 sentences, synthesizing the context. Explain key points clearly, elaborate on their significance, and connect them to the question. If the context lacks detail, note this and provide the best response possible. Do not invent facts.
+            # Run DistilBERT pipeline
+            qa_pipeline = load_qa_pipeline()
+            result = qa_pipeline(question=question, context=context)
+            answer = result["answer"]
 
-**Context**: {context}
-
-**Question**: {question}
-
-**Detailed Answer**:
-"""
-            result = t5_pipeline(prompt)[0]["generated_text"]
-
-            # Ensure minimum detail
-            if len(result.split()) < 50:  # Approx 5 sentences
-                result += " The retrieved context may not fully cover the question’s scope, but it aligns with the document’s broader discussion. Additional details might be available in other sections of the text."
+            # Ensure concise output (2–3 lines)
+            if len(answer.split()) > 20:  # Truncate if too long
+                answer = " ".join(answer.split()[:20]) + "..."
 
             # Update content area
             st.markdown(f"""
 <div id="contentArea" class="mt-4 p-4 bg-light rounded shadow">
   <div class="alert alert-info" role="alert">
     <h5 class="alert-heading">Answer:</h5>
-    <p>{result}</p>
+    <p>{answer}</p>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
             # Store in chat history
-            st.session_state.chat_history.append({"question": question, "answer": result})
+            st.session_state.chat_history.append({"question": question, "answer": answer})
 
         except Exception as e:
             st.markdown(f'<div id="contentArea" class="mt-4 p-4 bg-light rounded shadow"><p class="text-danger">Error generating answer: {str(e)}</p></div>', unsafe_allow_html=True)
@@ -242,12 +224,12 @@ with st.sidebar:
 ### Tips for Better Results
 - Upload a clear PDF document.
 - Ask specific questions (e.g., "What is the main cause of climate change?").
-- Use "Explain," "Describe," or "Summarize" for detailed answers.
-- Answers may take 10–20 seconds for large files.
+- Expect concise 2–3 line answers.
+- Processing is quick, under 10 seconds.
     """)
     st.markdown("""
 ### About Quick Veda
-This app uses Flan-T5 to analyze PDFs and provide detailed answers. It runs locally, ensuring privacy without API keys.
+This app uses DistilBERT to analyze PDFs and provide fast, concise answers. It runs locally, ensuring privacy without API keys.
     """)
 
 # Bootstrap JS
