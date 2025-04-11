@@ -1,20 +1,13 @@
 import streamlit as st
-from langchain.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.vectorstores import FAISS
 from transformers import pipeline
+from PyPDF2 import PdfReader
 import tempfile
 import os
 
 # Streamlit page configuration
 st.set_page_config(page_title="Quick Veda | Doc Analyzer", page_icon="📄", layout="wide")
 
-# Cache embeddings and DistilBERT pipeline
-@st.cache_resource
-def load_embeddings():
-    return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-
+# Cache DistilBERT pipeline
 @st.cache_resource
 def load_qa_pipeline():
     return pipeline(
@@ -24,8 +17,8 @@ def load_qa_pipeline():
     )
 
 # Initialize session state
-if "vector_store" not in st.session_state:
-    st.session_state.vector_store = None
+if "pdf_text" not in st.session_state:
+    st.session_state.pdf_text = None
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
@@ -145,16 +138,14 @@ if submit_button and uploaded_file and question:
             tmp_file.write(uploaded_file.read())
             pdf_path = tmp_file.name
 
-        # Load and split document
+        # Extract text from PDF
         try:
-            loader = PyPDFLoader(pdf_path)
-            data = loader.load()
-            text_splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=20)
-            chunks = text_splitter.split_documents(data)
-
-            # Create vector store
-            embeddings = load_embeddings()
-            st.session_state.vector_store = FAISS.from_documents(chunks, embeddings)
+            reader = PdfReader(pdf_path)
+            text = ""
+            for page in reader.pages:
+                text += page.extract_text() or ""
+            # Truncate to ~500 words to fit DistilBERT’s 512-token limit
+            st.session_state.pdf_text = " ".join(text.split()[:500])
 
             # Clean up
             os.unlink(pdf_path)
@@ -164,20 +155,13 @@ if submit_button and uploaded_file and question:
 
     with st.spinner("Generating answer..."):
         try:
-            # Retrieve relevant chunks
-            retriever = st.session_state.vector_store.as_retriever(search_kwargs={"k": 2})
-            relevant_docs = retriever.invoke(question)
-            context = " ".join([doc.page_content for doc in relevant_docs])
-            # Limit context to ~150 words for speed
-            context = " ".join(context.split()[:150])
-
             # Run DistilBERT pipeline
             qa_pipeline = load_qa_pipeline()
-            result = qa_pipeline(question=question, context=context)
+            result = qa_pipeline(question=question, context=st.session_state.pdf_text)
             answer = result["answer"]
 
             # Ensure concise output (2–3 lines)
-            if len(answer.split()) > 20:  # Truncate if too long
+            if len(answer.split()) > 20:
                 answer = " ".join(answer.split()[:20]) + "..."
 
             # Update content area
@@ -224,12 +208,11 @@ with st.sidebar:
 ### Tips for Better Results
 - Upload a clear PDF document.
 - Ask specific questions (e.g., "What is the main cause of climate change?").
-- Expect concise 2–3 line answers.
-- Processing is quick, under 10 seconds.
+- Expect concise 2–3 line answers in seconds.
     """)
     st.markdown("""
 ### About Quick Veda
-This app uses DistilBERT to analyze PDFs and provide fast, concise answers. It runs locally, ensuring privacy without API keys.
+This app uses DistilBERT to quickly analyze PDFs and provide short, relevant answers. It runs locally, no API keys needed.
     """)
 
 # Bootstrap JS
