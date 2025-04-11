@@ -29,7 +29,7 @@ def load_t5_pipeline():
         model="google/flan-t5-base",
         tokenizer="google/flan-t5-base",
         device=0 if torch.cuda.is_available() else -1,
-        max_length=500,
+        max_length=1000,
         temperature=0.7
     )
 
