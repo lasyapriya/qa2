@@ -144,8 +144,8 @@ if submit_button and uploaded_file and question:
             text = ""
             for page in reader.pages:
                 text += page.extract_text() or ""
-            # Limit to 250 words for better context handling
-            st.session_state.pdf_text = " ".join(text.split()[:250])
+            # Limit to 300 words for better context
+            st.session_state.pdf_text = " ".join(text.split()[:300])
 
             # Clean up
             os.unlink(pdf_path)
@@ -160,11 +160,9 @@ if submit_button and uploaded_file and question:
             result = qa_pipeline(question=question, context=st.session_state.pdf_text)
             answer = result["answer"]
 
-            # Ensure concise but slightly detailed output (2–4 lines)
-            if len(answer.split()) > 30:
-                answer = " ".join(answer.split()[:30]) + "..."
-            elif len(answer.split()) < 10:  # Add context if too short
-                answer += ". This relates to the document’s discussion on climate factors."
+            # Ensure concise output (2–4 lines, 20–40 words)
+            if len(answer.split()) > 40:
+                answer = " ".join(answer.split()[:40]) + "..."
 
             # Update content area
             st.markdown(f"""
@@ -210,7 +208,7 @@ with st.sidebar:
 ### Tips for Better Results
 - Upload a clear PDF document.
 - Ask specific questions (e.g., "What is the main cause of climate change?").
-- Expect 2–4 line answers in under 30 seconds.
+- Expect 2–4 line answers in under 20 seconds.
     """)
     st.markdown("""
 ### About Quick Veda
