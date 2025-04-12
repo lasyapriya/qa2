@@ -1,24 +1,23 @@
 import streamlit as st
-from transformers import pipeline
 from PyPDF2 import PdfReader
 import tempfile
 import os
+import google.generativeai as genai
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Streamlit page configuration
 st.set_page_config(page_title="Quick Veda | Doc Analyzer", page_icon="📄", layout="wide")
 
-# Cache DistilBERT pipeline with error handling
-@st.cache_resource
-def load_qa_pipeline():
-    try:
-        return pipeline(
-            "question-answering",
-            model="distilbert-base-cased-distilled-squad",
-            tokenizer="distilbert-base-cased-distilled-squad"
-        )
-    except Exception as e:
-        st.error(f"Failed to load DistilBERT model: {str(e)}. Please ensure an internet connection and try again.")
-        st.stop()
+# Configure Gemini API
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    st.error("Gemini API key not found. Please set the GEMINI_API_KEY environment variable.")
+    st.stop()
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-1.5-flash")  # Use appropriate Gemini model
 
 # Initialize session state
 if "pdf_text" not in st.session_state:
@@ -26,7 +25,7 @@ if "pdf_text" not in st.session_state:
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-# HTML and CSS
+# HTML and CSS (unchanged)
 html_content = """
 <!DOCTYPE html>
 <html lang="en">
@@ -159,10 +158,10 @@ if submit_button and uploaded_file and question:
 
     with st.spinner("Generating answer..."):
         try:
-            # Run DistilBERT pipeline
-            qa_pipeline = load_qa_pipeline()
-            result = qa_pipeline(question=question, context=st.session_state.pdf_text)
-            answer = result["answer"]
+            # Prepare prompt for Gemini API
+            prompt = f"Context: {st.session_state.pdf_text}\n\nQuestion: {question}\n\nAnswer concisely in up to 100 words."
+            response = model.generate_content(prompt)
+            answer = response.text.strip()
 
             # Ensure concise output (up to 100 words)
             if len(answer.split()) > 100:
@@ -216,7 +215,7 @@ with st.sidebar:
     """)
     st.markdown("""
 ### About Quick Veda
-This app uses DistilBERT to analyze PDFs and provide concise, relevant answers. No API keys needed.
+This app uses the Gemini API to analyze PDFs and provide concise, relevant answers.
     """)
 
 # Bootstrap JS
